@@ -1,0 +1,10 @@
+#!/bin/sh -e
+#
+# System prep for Debian
+#
+
+apt-get update
+
+# TODO: See what else we need
+apt-get -y install \
+	gpg

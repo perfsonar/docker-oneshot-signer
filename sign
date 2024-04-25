@@ -1,0 +1,177 @@
+#!/bin/sh -e
+#
+# Do a DOSS signing with a container from GHCR.
+#
+#BEGIN-HELP
+# Usage:  sign [ OPTIONS ] REPO-PATH KEY
+#
+# Arguments (see README.md for more information):
+#     REPO-PATH is the path to a built repository
+#     KEY is the key name or a path to an exported key
+#
+# Options:
+#     --passphrase P    Use passphrase P for the KEY; prefix with
+#                       '@' to read from a file (e.g., '@/foo/bar')
+#END-HELP
+#
+
+set -e
+
+
+WHOAMI=$(basename "$0")
+
+
+WORK=$(mktemp -d)
+chmod 700 "${WORK}"
+
+cleanup()
+{
+    rm -rf "${WORK}"
+}
+trap cleanup EXIT
+
+
+die()
+{
+    echo "$@" 1>&2
+    exit 1
+}
+
+
+self_help()
+{
+    sed -e '1,/^#BEGIN-HELP/d ; /^#END-HELP/,$d ; s/^#\s\{0,1\}//' "$0"
+    exit ${1:-0}
+}
+
+
+at_arg()
+{
+    if echo "$1" | egrep -q -e '^@'
+    then
+	FILE=$(echo "$1" | sed -e 's/^@//')
+	[ -r "${FILE}" ] || die "${FILE}: not found or not readable"
+	cat "${FILE}"
+    else
+	echo "$1"
+    fi
+}
+
+
+# Gargle the arguments
+
+PASSPHRASE=
+while echo "$1" | egrep -q -e '^--'
+do
+    OPTION=$1
+    shift
+
+    case "${OPTION}" in
+
+	--help)
+	    self_help
+	    ;;
+
+	--passphrase)
+	    PASSPHRASE=$(at_arg "$1")
+	    shift
+	    ;;
+
+	--name)
+	    NAME_ARG="--name $1"
+	    shift
+	    ;;
+
+	--no-halt)
+	    NO_HALT="--env SIGN_NO_HALT=1"
+	    ;;
+
+
+	--*)
+	    die "Unknown option ${OPTION}."
+	    ;;
+    esac
+done
+
+[ "$#" -eq 2 ] \
+    || self_help 1
+
+
+# Repository directory
+
+REPO_DIR_ARG="$1"
+REPO_DIR="$1"
+[ -d "$1" -a -w "$1" ] \
+    || die "${REPO_DIR} is not a writable directory."
+echo "${REPO_DIR}" | fgrep -q ':' \
+    && die "Build directory cannot contain colons."
+REPO_DIR=$(cd "${REPO_DIR}" && pwd)
+
+
+# GPG Key and Passphrase
+
+if echo "$2" | egrep -q -e '^@'
+then
+    FILE=$(echo "$2" | sed -e 's/^@//')
+    [ -r "${FILE}" ] || die "${FILE}: not found or not readable"
+    cp "${FILE}" "${WORK}/gpg-key"
+else
+    gpg --export -a "$2" > "${WORK}/gpg-key"
+fi
+
+echo "${PASSPHRASE}" > "${WORK}/gpg-key-passphrase"
+
+
+# Figure out what kind of packages we're signing and which container
+# to use.
+
+if [ -d "${REPO_DIR}/repodata" ]
+then
+    REPO_TYPE=rpm
+# TODO: Identify Debian repositories
+elif false
+then
+    REPO_TYPE=deb
+else
+    die "${REPO_DIR_ARG}: Unable to identify repository type."
+fi
+
+
+CONTAINER="ghcr.io/perfsonar/docker-oneshot-signer/${REPO_TYPE}:latest"
+
+# Make it happen
+
+if [ "$(id -u)" -ne 0 ]
+then
+    SUDO=sudo
+fi
+
+STATUS=0
+${ECHO} ${SUDO} docker run \
+	${NAME_ARG} \
+	${NO_HALT} \
+	--pull always \
+	--tty \
+	--tmpfs /tmp \
+	--tmpfs /run \
+	--volume "${REPO_DIR}:/repo" \
+	--volume "${WORK}:/work" \
+	--rm \
+	"${CONTAINER}" \
+    || STATUS=$?
+
+# Docker exits with a 130 when systemd is stopped with SIGINT (halt).
+# Anything else was a container problem, not a result of the build.
+[ $STATUS -eq 0 -o $STATUS -eq 130 ] || false
+
+# Check on the status of the signing
+STATUS_FILE="${WORK}/status"
+
+[ -e "${STATUS_FILE}" ] || die "Build produced no status."
+
+BUILD_STATUS=$(cat "${STATUS_FILE}")
+if [ "${BUILD_STATUS}" -ne 0 ]
+then
+    echo "Build failed" 1>&2
+    exit "${BUILD_STATUS}"
+fi

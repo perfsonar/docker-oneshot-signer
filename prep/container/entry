@@ -1,0 +1,85 @@
+#!/bin/bash -e
+#
+# Entry point for one-shot signer container.  This should just do its
+# business and exit.
+#
+
+set -e
+
+
+die()
+{
+    echo "$@" 1>&2
+    exit 1
+}
+
+
+SIGN=/sign
+WORK=/work
+
+#
+# Configure GPG
+#
+
+KEY_FILE=/work/gpg-signing-key
+[ -f "${KEY_FILE}" -a -r "${KEY_FILE}" ] \
+    || die "${KEY_FILE}: Not found"
+
+PASSPHRASE_FILE=/work/gpg-signing-key-passphrase
+[ -f "${PASSPHRASE_FILE}" -a -r "${PASSPHRASE_FILE}" ] \
+    || die "${KEY_FILE}: Not found"
+
+export GNUPGHOME="${WORK}/dot-gnupg"
+mkdir -p "${GNUPGHOME}"
+chmod 700 "${GNUPGHOME}"
+
+gpg --import < "${KEY_FILE}"
+
+# Since we're working in a fresh directory, there should be exactly one key.
+[ $(gpg --list-keys | awk '$1 == "uid" { print }' | wc -l) -eq 1 ] \
+    || die "Too many keys in GPG"
+
+KEY_NAME=$(gpg --list-keys --with-colons \
+	       | awk -F: '$1 == "uid" {print $10}')
+
+if [ -e '/etc/redhat-release' ]
+then
+
+    #
+    # Configure RPM
+    #
+
+    RPMDB="${WORK}/rpmdb"
+    mkdir -p "${RPMDB}"
+    chmod 700 "${RPMDB}"
+
+    rpm --dbpath "${RPMDB}" --initdb
+    rpm --dbpath "${RPMDB}" --import "${KEY_FILE}"
+
+    echo "Signing RPM packages as ${KEY_NAME}:"
+
+    # PORT: xargs -0 -r is GNU-specific.
+    find "${SIGN}" -name '*.rpm' -print0 \
+	| xargs -0 -r rpm \
+		--dbpath "${RPMDB}" \
+		--define "_gpg_path $${GNUPGHOME}" \
+		--define "_gpg_name $${KEY_NAME}" \
+		--addsign
+
+    # TODO: Does the repo data need to be rebuilt after the files are changed?
+
+
+elif [ -e '/etc/debian_version' ]; then
+
+    # TODO: Support Debian
+    die "Debian is not supported yet."
+
+else
+
+    die "Unsupported OS"
+
+fi
+
+
+# At this point, the container will be destroyed.
+exit 0

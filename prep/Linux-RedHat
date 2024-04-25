@@ -1,0 +1,11 @@
+#!/bin/sh -e
+#
+# System prep for RedHat
+#
+
+dnf -y update
+
+# TODO: See what else we need
+dnf -y install \
+    gpg \
+    rpm

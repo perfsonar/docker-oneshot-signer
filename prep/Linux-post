@@ -1,0 +1,17 @@
+#
+# Post Prep Script for Linux
+#
+
+cd "$(dirname $0)"
+
+do_install()
+{
+    local MODE=$1
+    shift
+    install --owner root --group root --mode=$MODE "$@"
+}
+
+# Entry point.  This does the deed.
+
+do_install 555 container/entry /entry
+echo Installed entry script

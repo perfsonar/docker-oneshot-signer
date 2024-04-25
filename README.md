@@ -9,12 +9,29 @@ The use case for DOSSes is to enable repositories to be easily signed
 manually or as part of an automated process.
 
 
+## Prerequisites
+
+The following are required to run 
+
+ * A POSIX-compliant shell
+ * Docker or Podman with Docker compatibility installed
+ * GPG (If a key is to be exported from a keyring.)
+
 ## Preparing to Sign
 
-Other than Docker and access to the containers, the sole requirement
-for a one-shot signing is a directory (called the _repository
-directory_).  Usually, this will have been produced by Unibuild and
-wil be named `unibuild-repo`.
+DOSS requires access to its containers, which are available on
+`ghcr.io`.
+
+There needs to be a directory containing an RPM or Debian repository
+to be signed.  Usually, this will have been produced by Unibuild and
+wil be named `unibuild-repo`.  DOSS will automatically select the
+appropriate container to match the repository.
+
+The key used to sign the packages in the repository can be one in your
+GPG keyring or provided as a file that can be imported into GPG inside
+the container during signing.  The passphrase for the key can be
+provided on the command line (not recommended) or in a file
+(recommended).
 
 
 ## Signing Using a DOSS Container

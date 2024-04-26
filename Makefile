@@ -4,31 +4,35 @@
 # Note that this is for development and container image builds.
 #
 
-
-# Set this to a Docker image to use something other than the default.
-# CONTAINER_FROM := ghcr.io/perfsonar/unibuild/el9:latest
-
-# Set this to clone a Git repo instead of using the provided example.
-#CLONE := https://github.com/perfsonar/unibuild.git
-
-# Example:  Build Unibuild.
-# # CONTAINER_FROM := The default is fine.
-# CLONE := https://github.com/perfsonar/unibuild.git
-# # CLONE_BRANCH := Not Applicable
+# What should be tested.  This should be 'rpm' or 'deb'.
+TEST_WITH := rpm
 
 
-# Example:  Build pScheduler
-#CONTAINER_FROM := ghcr.io/perfsonar/unibuild/el8:latest
-#CLONE := https://github.com/perfsonar/pscheduler.git
-#CLONE_BRANCH := 5.0.0
+KEY := @./test-key/key
+PASSPHRASE_FILE := ./test-key/passphrase
 
 
 # ----- NO USER-SERVICEABLE PARTS BELOW THIS LINE -----
 
-ifndef CONTANER_IMAGE
-  CONTAINER_FROM=almalinux:8
+# What container to use/build
+
+ifeq ($(TEST_WITH),rpm)
+  CONTAINER_FROM := almalinux:latest
+endif
+ifeq ($(TEST_WITH),deb)
+  CONTAINER_FROM := debian:latest
 endif
 
+ifndef CONTAINER_FROM
+  $(error TEST_WITH should be 'rpm' or 'deb')
+endif
+
+
+# Which repository should be used for testing
+TEST_REPO := ./test-repos/$(TEST_WITH)
+
+
+# How to invoke Docker
 
 ifneq ($(shell id -u),0)
   DOCKER=sudo docker
@@ -42,32 +46,8 @@ default: run
 
 # Where the build happens.
 
-BUILD_AREA := ./build-area
-$(BUILD_AREA)::
-	rm -rf "$@"
-	mkdir -p "$@"
-TO_CLEAN += $(BUILD_AREA)
-
-
-ifdef CLONE
-  BUILD_DIR := $(BUILD_AREA)/$(shell basename '$(CLONE)' .git)
-  ifdef CLONE_BRANCH
-    BRANCH_ARG := --branch '$(CLONE_BRANCH)'
-  endif
-else
-  BUILD_DIR := $(BUILD_AREA)/test-product
-endif
-$(BUILD_DIR): $(BUILD_AREA)
-ifdef CLONE
-	git -C $(BUILD_AREA) clone $(BRANCH_ARG) "$(CLONE)"
-else
-	cp -r test-product "$(BUILD_AREA)"
-endif
-
-
-
-IMAGE := builder
-CONTAINER_NAME := builder-test
+IMAGE := signer-test
+CONTAINER_NAME := signer-test
 
 default: run
 
@@ -83,28 +63,37 @@ $(BUILT): prep Dockerfile Makefile
 	touch $@
 TO_CLEAN += $(BUILT)
 
+
+TEST_DIR := ./signed-repo
+$(TEST_DIR):
+	rm -rf $@
+	cp -r "$(TEST_REPO)" $@
+TO_CLEAN += $(TEST_DIR)
+
+
 image: $(BUILT)
 
-BUILD_ARGS += \
+
+SIGN_ARGS += \
 	--name "$(CONTAINER_NAME)" \
-	--absolute \
-	"$(BUILD_DIR)" "$(IMAGE)"
+	--container "$(IMAGE)" \
+	--passphrase "@$(PASSPHRASE_FILE)" \
+	"$(TEST_DIR)" "$(KEY)"
 
 # Show the command to run the container (for debug)
 command::
-	@./build --command $(BUILD_ARGS)
+	./sign --command $(SIGN_ARGS)
 
-
-RUN_DEPS := $(BUILT) $(BUILD_DIR) build
+RUN_DEPS := $(BUILT) $(BUILD_DIR) $(TEST_DIR)
 
 # Run the container and exit
 run: $(RUN_DEPS)
-	./build $(BUILD_ARGS)
+	./sign $(SIGN_ARGS)
 
 
 # Run the container but don't exit (for debug)
 persist: $(RUN_DEPS)
-	./build --no-halt $(BUILD_ARGS)
+	./sign --no-halt $(SIGN_ARGS)
 
 
 # Log into the persisted container
@@ -119,12 +108,10 @@ halt:
 
 # Remove the container
 rm:
-	-$(DOCKER) exec -it "$(CONTAINER_NAME)" halt
 	$(DOCKER) rm -f "$(CONTAINER_NAME)"
 
 
 clean: rm
 	make -C prep clean
-	make -C test-product clean
 	$(DOCKER) image rm -f "$(IMAGE)"
 	rm -rf $(TO_CLEAN) *~

@@ -77,15 +77,25 @@ do
 	    shift
 	    ;;
 
+	# These are for debug.
+
+	--command)
+	    ECHO=echo
+	    ;;
+
+	--container)
+	    CONTAINER=$1
+	    shift
+	    ;;
+
 	--name)
 	    NAME_ARG="--name $1"
 	    shift
 	    ;;
 
 	--no-halt)
-	    NO_HALT="--env SIGN_NO_HALT=1"
+	    NO_HALT="--env BUILD_NO_HALT=1"
 	    ;;
-
 
 	--*)
 	    die "Unknown option ${OPTION}."
@@ -114,12 +124,14 @@ if echo "$2" | egrep -q -e '^@'
 then
     FILE=$(echo "$2" | sed -e 's/^@//')
     [ -r "${FILE}" ] || die "${FILE}: not found or not readable"
-    cp "${FILE}" "${WORK}/gpg-key"
+    cp "${FILE}" "${WORK}/gpg-signing-key"
 else
-    gpg --export -a "$2" > "${WORK}/gpg-key"
+    gpg --export -a "$2" > "${WORK}/gpg-signing-key"
 fi
 
-echo "${PASSPHRASE}" > "${WORK}/gpg-key-passphrase"
+echo "${PASSPHRASE}" > "${WORK}/gpg-signing-key-passphrase"
+
+ls -alR $WORK
 
 
 # Figure out what kind of packages we're signing and which container
@@ -137,7 +149,15 @@ else
 fi
 
 
-CONTAINER="ghcr.io/perfsonar/docker-oneshot-signer/${REPO_TYPE}:latest"
+if [ -z "${CONTAINER}" ]
+then
+    CONTAINER="ghcr.io/perfsonar/docker-oneshot-signer/${REPO_TYPE}:latest"
+    PULL_ARG="--pull always"
+else
+    PULL_ARG="--pull never"
+fi
+
+
 
 # Make it happen
 
@@ -149,8 +169,8 @@ fi
 STATUS=0
 ${ECHO} ${SUDO} docker run \
 	${NAME_ARG} \
+	${PULL_ARG} \
 	${NO_HALT} \
-	--pull always \
 	--tty \
 	--tmpfs /tmp \
 	--tmpfs /run \

@@ -1,4 +1,5 @@
 # Things we don't care about.
 
 .built
+./test
 *~

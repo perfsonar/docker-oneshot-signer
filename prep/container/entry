@@ -15,71 +15,26 @@ die()
 
 
 SIGN=/sign
-WORK=/work
 
-#
-# Configure GPG
-#
+# User account to match signing area's owner.  This account will do
+# the signing.
 
-KEY_FILE=/work/gpg-signing-key
-[ -f "${KEY_FILE}" -a -r "${KEY_FILE}" ] \
-    || die "${KEY_FILE}: Not found"
+SIGN_USER=signer
+SIGN_GROUP=signer
+SIGN_AREA_UID=$(stat -c %u "${SIGN}")
+SIGN_AREA_GID=$(stat -c %g "${SIGN}")
 
-PASSPHRASE_FILE=/work/gpg-signing-key-passphrase
-[ -f "${PASSPHRASE_FILE}" -a -r "${PASSPHRASE_FILE}" ] \
-    || die "${KEY_FILE}: Not found"
-
-export GNUPGHOME="${WORK}/dot-gnupg"
-mkdir -p "${GNUPGHOME}"
-chmod 700 "${GNUPGHOME}"
-
-gpg --import < "${KEY_FILE}"
-
-# Since we're working in a fresh directory, there should be exactly one key.
-[ $(gpg --list-keys | awk '$1 == "uid" { print }' | wc -l) -eq 1 ] \
-    || die "Too many keys in GPG"
-
-KEY_NAME=$(gpg --list-keys --with-colons \
-	       | awk -F: '$1 == "uid" {print $10}')
-
-if [ -e '/etc/redhat-release' ]
+if [ "${SIGN_AREA_GID}" -ne 0 ]
 then
-
-    #
-    # Configure RPM
-    #
-
-    RPMDB="${WORK}/rpmdb"
-    mkdir -p "${RPMDB}"
-    chmod 700 "${RPMDB}"
-
-    rpm --dbpath "${RPMDB}" --initdb
-    rpm --dbpath "${RPMDB}" --import "${KEY_FILE}"
-
-    echo "Signing RPM packages as ${KEY_NAME}:"
-
-    # PORT: xargs -0 -r is GNU-specific.
-    find "${SIGN}" -name '*.rpm' -print0 \
-	| xargs -0 -r rpm \
-		--dbpath "${RPMDB}" \
-		--define "_gpg_path $${GNUPGHOME}" \
-		--define "_gpg_name $${KEY_NAME}" \
-		--addsign
-
-    # TODO: Does the repo data need to be rebuilt after the files are changed?
-
-
-elif [ -e '/etc/debian_version' ]; then
-
-    # TODO: Support Debian
-    die "Debian is not supported yet."
-
+    groupadd -g "${SIGN_AREA_GID}" "${SIGN_GROUP}"
+fi
+if [ "${SIGN_AREA_UID}" -ne 0 ]
+then
+    useradd -u "${SIGN_AREA_UID}" -g "${SIGN_GROUP}" -m "${SIGN_USER}"
 else
-
-    die "Unsupported OS"
-
+    # We're already root.  Be root.
+    SIGN_USER=root
 fi
 
-
-# At this point, the container will be destroyed.
-exit 0
+# After this, the container will be destroyed.
+exec su - "${SIGN_USER}" -c "/entry-user '${SIGN}'"

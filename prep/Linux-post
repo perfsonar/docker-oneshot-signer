@@ -14,4 +14,5 @@ do_install()
 # Entry point.  This does the deed.
 
 do_install 555 container/entry /entry
-echo Installed entry script
+do_install 555 container/entry-user /entry-user
+echo Installed entry scripts

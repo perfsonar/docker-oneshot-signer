@@ -21,16 +21,6 @@ set -e
 WHOAMI=$(basename "$0")
 
 
-WORK=$(mktemp -d)
-chmod 700 "${WORK}"
-
-cleanup()
-{
-    rm -rf "${WORK}"
-}
-trap cleanup EXIT
-
-
 die()
 {
     echo "$@" 1>&2
@@ -118,6 +108,21 @@ echo "${REPO_DIR}" | fgrep -q ':' \
 REPO_DIR=$(cd "${REPO_DIR}" && pwd)
 
 
+# Work directory (created within the repository directory)
+
+WORK="${REPO_DIR}/DOSS"
+mkdir -p "${WORK}"
+chmod 700 "${WORK}"
+
+cleanup()
+{
+    # TODO: Enable this
+    echo DISABLED rm -rf "${WORK}"
+}
+trap cleanup EXIT
+
+
+
 # GPG Key and Passphrase
 
 if echo "$2" | egrep -q -e '^@'
@@ -130,8 +135,6 @@ else
 fi
 
 echo "${PASSPHRASE}" > "${WORK}/gpg-signing-key-passphrase"
-
-ls -alR $WORK
 
 
 # Figure out what kind of packages we're signing and which container
@@ -158,7 +161,6 @@ else
 fi
 
 
-
 # Make it happen
 
 if [ "$(id -u)" -ne 0 ]
@@ -174,8 +176,7 @@ ${ECHO} ${SUDO} docker run \
 	--tty \
 	--tmpfs /tmp \
 	--tmpfs /run \
-	--volume "${REPO_DIR}:/repo" \
-	--volume "${WORK}:/work" \
+	--volume "${REPO_DIR}:/sign:rw" \
 	--rm \
 	"${CONTAINER}" \
     || STATUS=$?

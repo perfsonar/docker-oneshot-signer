@@ -64,7 +64,7 @@ $(BUILT): prep Dockerfile Makefile
 TO_CLEAN += $(BUILT)
 
 
-TEST_DIR := ./signed-repo
+TEST_DIR := ./test
 $(TEST_DIR):
 	rm -rf $@
 	cp -r "$(TEST_REPO)" $@

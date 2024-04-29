@@ -1,6 +1,20 @@
 #!/bin/sh -e
 #
 # Do a signing in the directory named by $1
+#
+
+
+TMPBASE=$(mktemp -d)
+
+cleanup()
+{
+    # This is best-effort.
+    gpgconf --kill gpg-agent || true
+
+    rm -rf "${TMPBASE}"
+}
+trap cleanup EXIT
+
 
 die()
 {
@@ -18,46 +32,37 @@ WORK="${SIGN}/DOSS"
     || die "${WORK}: Work directory not found"
 
 
-printf "\n\nSigning\n\n"
-
-id
-
-echo
-ls -alh /
-echo
-ls -alh "${SIGN}"
-echo
-ls -alh "${WORK}"
-echo
-
-exit 99
-
-
-
 #
 # Configure GPG
 #
 
-KEY_FILE="${WORK}/gpg-signing-key
-[ -f "${KEY_FILE}" -a -r "${KEY_FILE}" ] \
-    || die "${KEY_FILE}: Not found"
+PUBLIC_KEY_FILE="${WORK}/gpg-public-key"
+SECRET_KEY_FILE="${WORK}/gpg-secret-key"
+PASSPHRASE_FILE="${WORK}/gpg-passphrase"
+GPG="gpg --quiet"
 
-PASSPHRASE_FILE=${WORK}/gpg-signing-key-passphrase
-[ -f "${PASSPHRASE_FILE}" -a -r "${PASSPHRASE_FILE}" ] \
-    || die "${KEY_FILE}: Not found"
-
-export GNUPGHOME="${WORK}/dot-gnupg"
-mkdir -p "${GNUPGHOME}"
+export GNUPGHOME="$(mktemp -d)"
 chmod 700 "${GNUPGHOME}"
 
-gpg --import < "${KEY_FILE}"
+# Need a GPG agent running to import keys
+GPG_AGENT_SOCKET=$(gpgconf --list-dirs agent-socket | head -1)
+if [ ! -S "${GPG_AGENT_SOCKET}" ]
+then
+    gpg-agent --daemon --quiet
+fi
+
+${GPG} --import "${PUBLIC_KEY_FILE}"
+${GPG} --import --pinentry-mode loopback  --passphrase-file "${PASSPHRASE_FILE}" "${SECRET_KEY_FILE}"
 
 # Since we're working in a fresh directory, there should be exactly one key.
-[ $(gpg --list-keys | awk '$1 == "uid" { print }' | wc -l) -eq 1 ] \
+[ $(${GPG} --list-keys | awk '$1 == "uid" { print }' | wc -l) -eq 1 ] \
     || die "Too many keys in GPG"
 
-KEY_NAME=$(gpg --list-keys --with-colons \
+KEY_NAME=$(${GPG} --list-keys --with-colons \
 	       | awk -F: '$1 == "uid" {print $10}')
+
+export GPG_TTY=$(tty)
+
 
 if [ -e '/etc/redhat-release' ]
 then
@@ -70,17 +75,21 @@ then
     mkdir -p "${RPMDB}"
     chmod 700 "${RPMDB}"
 
-    rpm --dbpath "${RPMDB}" --initdb
-    rpm --dbpath "${RPMDB}" --import "${KEY_FILE}"
+    RPM="rpm --dbpath $(cd "${RPMDB}" && pwd) --quiet"
 
-    echo "Signing RPM packages as ${KEY_NAME}:"
+    PULIC_KEY_FILE="${WORK}/public-key"
+    ${GPG} --export -a "${KEY_NAME}" > "${PULIC_KEY_FILE}"
+    ${RPM} --initdb
+    ${RPM} --import "${PUBLIC_KEY_FILE}"
+    rm -rf "${PUBLIC_KEY_FILE}"
 
     # PORT: xargs -0 -r is GNU-specific.
     find "${SIGN}" -name '*.rpm' -print0 \
-	| xargs -0 -r rpm \
-		--dbpath "${RPMDB}" \
-		--define "_gpg_path $${GNUPGHOME}" \
-		--define "_gpg_name $${KEY_NAME}" \
+	| xargs -0 -r ${RPM} \
+		--define "_gpgbin $(type -p gpg)" \
+		--define "_gpg_path ${GNUPGHOME}" \
+		--define "_gpg_name ${KEY_NAME}" \
+		--define "_gpg_sign_cmd_extra_args  --pinentry-mode loopback  --passphrase-file ${PASSPHRASE_FILE}" \
 		--addsign
 
     # TODO: Does the repo data need to be rebuilt after the files are changed?
@@ -89,11 +98,10 @@ then
 elif [ -e '/etc/debian_version' ]; then
 
     # TODO: Support Debian
-    die "Debian is not supported yet."
+    echo "Debian is a no-op for the time being."
 
 else
 
     die "Unsupported OS"
 
 fi
-

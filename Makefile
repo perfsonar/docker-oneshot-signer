@@ -7,9 +7,12 @@
 # What should be tested.  This should be 'rpm' or 'deb'.
 TEST_WITH := rpm
 
+ifndef GNUPGHOME
+  export GNUPGHOME := ./test-keyring
+endif
 
-KEY := @./test-key/key
-PASSPHRASE_FILE := ./test-key/passphrase
+KEY := Test Key
+PASSPHRASE_FILE := ./test-keyring/passphrase
 
 
 # ----- NO USER-SERVICEABLE PARTS BELOW THIS LINE -----
@@ -77,7 +80,7 @@ image: $(BUILT)
 SIGN_ARGS += \
 	--name "$(CONTAINER_NAME)" \
 	--container "$(IMAGE)" \
-	--passphrase "@$(PASSPHRASE_FILE)" \
+	--passphrase "$(PASSPHRASE_FILE)" \
 	"$(TEST_DIR)" "$(KEY)"
 
 # Show the command to run the container (for debug)

@@ -4,9 +4,6 @@
 # business and exit.
 #
 
-set -e
-
-
 die()
 {
     echo "$@" 1>&2
@@ -19,22 +16,29 @@ SIGN=/sign
 # User account to match signing area's owner.  This account will do
 # the signing.
 
-SIGN_USER=signer
-SIGN_GROUP=signer
-SIGN_AREA_UID=$(stat -c %u "${SIGN}")
-SIGN_AREA_GID=$(stat -c %g "${SIGN}")
+SIGNER_USER=signer
+SIGNER_GROUP=signer
+SIGNER_AREA_UID=$(stat -c %u "${SIGN}")
+SIGNER_AREA_GID=$(stat -c %g "${SIGN}")
 
-if [ "${SIGN_AREA_GID}" -ne 0 ]
+if [ "${SIGNER_AREA_GID}" -ne 0 ]
 then
-    groupadd -g "${SIGN_AREA_GID}" "${SIGN_GROUP}"
+    groupadd -g "${SIGNER_AREA_GID}" "${SIGNER_GROUP}"
 fi
-if [ "${SIGN_AREA_UID}" -ne 0 ]
+if [ "${SIGNER_AREA_UID}" -ne 0 ]
 then
-    useradd -u "${SIGN_AREA_UID}" -g "${SIGN_GROUP}" -m "${SIGN_USER}"
+    SIGNER_HOME=$(mktemp -d)
+    # This forces useradd to create and populate the directory
+    rmdir "${SIGNER_HOME}"
+    useradd -u "${SIGNER_AREA_UID}" -g "${SIGNER_GROUP}" -m "${SIGNER_USER}" -d "${SIGNER_HOME}"
 else
     # We're already root.  Be root.
-    SIGN_USER=root
+    SIGNER_USER=root
 fi
 
-# After this, the container will be destroyed.
-exec su - "${SIGN_USER}" -c "/entry-user '${SIGN}'"
+# The && and || work around having -e set.
+su - "${SIGNER_USER}" -c "/entry-user '${SIGN}'" \
+    && STATUS=$? || STATUS=$?
+
+# Save this for outside the container.
+echo "${STATUS}" > "${SIGN}/.doss-status"

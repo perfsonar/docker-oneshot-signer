@@ -3,23 +3,25 @@
 # Do a DOSS signing with a container from GHCR.
 #
 #BEGIN-HELP
-# Usage:  sign [ OPTIONS ] REPO-PATH KEY
+# Usage:  sign [ OPTIONS ] REPO-PATH [ KEY-NAME ]
 #
 # Arguments (see README.md for more information):
 #     REPO-PATH is the path to a built repository
-#     KEY is the key name or a path to an exported key
+#     KEY_NAME is the name of the key to use in signing
 #
 # Options:
-#     --passphrase P    Use passphrase P for the KEY; prefix with
-#                       '@' to read from a file (e.g., '@/foo/bar')
+#     --keyring K       Use the GPG keyring in directory K (default is
+#                       (~/.gnupg)
+#     --passphrase P    Path to a file containing key passphrase.  If not
+#                       provided, it will be assumed that the key has no
+#                       passphrase.
+#
 #END-HELP
 #
 
 set -e
 
-
 WHOAMI=$(basename "$0")
-
 
 die()
 {
@@ -35,21 +37,9 @@ self_help()
 }
 
 
-at_arg()
-{
-    if echo "$1" | egrep -q -e '^@'
-    then
-	FILE=$(echo "$1" | sed -e 's/^@//')
-	[ -r "${FILE}" ] || die "${FILE}: not found or not readable"
-	cat "${FILE}"
-    else
-	echo "$1"
-    fi
-}
-
-
 # Gargle the arguments
 
+KEYRING_DIR="${HOME}/.gnupg"
 PASSPHRASE=
 while echo "$1" | egrep -q -e '^--'
 do
@@ -62,8 +52,13 @@ do
 	    self_help
 	    ;;
 
+	--keyring)
+	    KEYRING_DIR=$1
+	    shift
+	    ;;
+
 	--passphrase)
-	    PASSPHRASE=$(at_arg "$1")
+	    PASSPHRASE=$1
 	    shift
 	    ;;
 
@@ -93,9 +88,8 @@ do
     esac
 done
 
-[ "$#" -eq 2 ] \
+[ "$#" -eq 1 -o "$#" -eq 2 ] \
     || self_help 1
-
 
 # Repository directory
 
@@ -107,34 +101,54 @@ echo "${REPO_DIR}" | fgrep -q ':' \
     && die "Build directory cannot contain colons."
 REPO_DIR=$(cd "${REPO_DIR}" && pwd)
 
+# Key Name
+
+if [ $# -eq 2 ]
+then
+    KEY_NAME=$2
+fi
+
 
 # Work directory (created within the repository directory)
 
 WORK="${REPO_DIR}/DOSS"
+rm -rf "${WORK}"
 mkdir -p "${WORK}"
 chmod 700 "${WORK}"
 
 cleanup()
 {
-    # TODO: Enable this
-    echo DISABLED rm -rf "${WORK}"
+    rm -rf "${WORK}" "${STATUS_FILE}"
 }
 trap cleanup EXIT
 
 
+# GPG passphrase and keys
 
-# GPG Key and Passphrase
+PASSPHRASE_FILE="${WORK}/gpg-passphrase"
+touch "${PASSPHRASE_FILE}"
+chmod 600 "${PASSPHRASE_FILE}"
+cat "${PASSPHRASE}" > "${PASSPHRASE_FILE}"
 
-if echo "$2" | egrep -q -e '^@'
+PUBLIC_KEY_FILE="${WORK}/gpg-public-key"
+touch "${PUBLIC_KEY_FILE}"
+chmod 600 "${PUBLIC_KEY_FILE}"
+gpg --export -a ${KEY_NAME} > "${PUBLIC_KEY_FILE}"
+
+# Need a GPG agent running to export keys.
+
+GPG_AGENT_SOCKET=$(gpgconf --list-dirs agent-socket | head -1)
+if [ ! -S "${GPG_AGENT_SOCKET}" ]
 then
-    FILE=$(echo "$2" | sed -e 's/^@//')
-    [ -r "${FILE}" ] || die "${FILE}: not found or not readable"
-    cp "${FILE}" "${WORK}/gpg-signing-key"
-else
-    gpg --export -a "$2" > "${WORK}/gpg-signing-key"
+    echo "No GPG agent running.  Starting one."
+    gpg-agent --daemon
+    STARTED_AGENT=1
 fi
 
-echo "${PASSPHRASE}" > "${WORK}/gpg-signing-key-passphrase"
+SECRET_KEY_FILE="${WORK}/gpg-secret-key"
+touch "${SECRET_KEY_FILE}"
+chmod 600 "${SECRET_KEY_FILE}"
+gpg --export-secret-key -a --pinentry-mode loopback  --passphrase-file "${PASSPHRASE_FILE}" > "${SECRET_KEY_FILE}"
 
 
 # Figure out what kind of packages we're signing and which container
@@ -161,6 +175,28 @@ else
 fi
 
 
+# Permission args
+
+OS=$(uname -s)
+case "${OS}" in
+    Linux)
+	if [ -d '/sys/fs/cgroup/cgroup.controllers' ]
+	then
+	    # Cgroups v2
+	    PERM_ARGS="--volume /sys/fs/cgroup:/sys/fs/cgroup:ro"
+	else
+	    PERM_ARGS="--privileged"
+	fi
+	;;
+    Darwin)
+	PERM_ARGS="--privileged"
+	;;
+    *)
+	die "No support for ${OS}" 1>&2
+	exit 1
+esac
+
+
 # Make it happen
 
 if [ "$(id -u)" -ne 0 ]
@@ -171,6 +207,7 @@ fi
 STATUS=0
 ${ECHO} ${SUDO} docker run \
 	${NAME_ARG} \
+	${PERM_ARGS} \
 	${PULL_ARG} \
 	${NO_HALT} \
 	--tty \
@@ -186,9 +223,9 @@ ${ECHO} ${SUDO} docker run \
 [ $STATUS -eq 0 -o $STATUS -eq 130 ] || false
 
 # Check on the status of the signing
-STATUS_FILE="${WORK}/status"
+STATUS_FILE="${REPO_DIR}/.doss-status"
 
-[ -e "${STATUS_FILE}" ] || die "Build produced no status."
+[ -e "${STATUS_FILE}" ] || die "Signing produced no status."
 
 BUILD_STATUS=$(cat "${STATUS_FILE}")
 if [ "${BUILD_STATUS}" -ne 0 ]

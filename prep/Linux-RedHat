@@ -8,4 +8,6 @@ dnf -y update
 # TODO: See what else we need
 dnf -y install \
     gpg \
-    rpm
+    pinentry \
+    rpm \
+    rpm-sign

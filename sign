@@ -41,7 +41,7 @@ self_help()
 
 KEYRING_DIR="${HOME}/.gnupg"
 PASSPHRASE=
-while echo "$1" | egrep -q -e '^--'
+while echo "$1" | grep -E -q -e '^--'
 do
     OPTION=$1
     shift
@@ -97,7 +97,7 @@ REPO_DIR_ARG="$1"
 REPO_DIR="$1"
 [ -d "$1" -a -w "$1" ] \
     || die "${REPO_DIR} is not a writable directory."
-echo "${REPO_DIR}" | fgrep -q ':' \
+echo "${REPO_DIR}" | grep -F -q ':' \
     && die "Build directory cannot contain colons."
 REPO_DIR=$(cd "${REPO_DIR}" && pwd)
 

@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ 'almalinux', 'debian' ]
+        package: [ 'almalinux', 'debian' ]
 
     runs-on: ubuntu-latest
 
@@ -52,13 +52,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set image variant
+        run: |
+         if [ "${{ matrix.os }}" = "almalinux" ]; then
+           echo "IMAGE_VARIANT=rpm" >> $GITHUB_ENV
+         elif [ "${{ matrix.os }}" = "debian" ]; then
+           echo "IMAGE_VARIANT=deb" >> $GITHUB_ENV
+         fi
+
+                                                                                        fi
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.os }}-latest
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ env.IMAGE_VARIANT }}-latest
           tags: |
             type=schedule
             type=ref,event=branch

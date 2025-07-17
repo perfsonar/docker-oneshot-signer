@@ -54,10 +54,10 @@ jobs:
 
       - name: Set image variant
         run: |
-         if [ "${{ matrix.package }}" = "almalinux" ]; then
-           echo "IMAGE_VARIANT=rpm" >> $GITHUB_ENV
-         elif [ "${{ matrix.package }}" = "debian" ]; then
-           echo "IMAGE_VARIANT=deb" >> $GITHUB_ENV
+          if [ "${{ matrix.package }}" = "almalinux" ]; then
+            echo "IMAGE_VARIANT=rpm" >> $GITHUB_ENV
+          elif [ "${{ matrix.package }}" = "debian" ]; then
+            echo "IMAGE_VARIANT=deb" >> $GITHUB_ENV
          fi
         
                                                                                         fi

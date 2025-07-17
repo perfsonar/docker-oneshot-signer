@@ -65,7 +65,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ env.IMAGE_VARIANT }}-latest
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ env.IMAGE_VARIANT }}
           tags: |
             type=schedule
             type=ref,event=branch

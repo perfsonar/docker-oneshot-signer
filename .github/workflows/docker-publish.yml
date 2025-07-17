@@ -16,7 +16,6 @@ env:
   # github.repository as <account>/<repo>
   IMAGE_BASE: ${{ github.repository }}
 
-
 jobs:
   build:
     # Iterates through each OS using a matrix strategy
@@ -24,7 +23,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ 'almalinux', 'debian' ]
+        package: [ 'almalinux', 'debian' ]
 
     runs-on: ubuntu-latest
 
@@ -52,13 +51,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set image variant
+        run: |
+          if [ "${{ matrix.package }}" = "almalinux" ]; then
+            echo "IMAGE_VARIANT=rpm" >> $GITHUB_ENV
+          elif [ "${{ matrix.package }}" = "debian" ]; then
+            echo "IMAGE_VARIANT=deb" >> $GITHUB_ENV
+          fi
+
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.os }}-latest
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ env.IMAGE_VARIANT }}-latest
           tags: |
             type=schedule
             type=ref,event=branch
@@ -74,7 +81,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          build-args: FROM=${{ matrix.os }}:latest
+          build-args: FROM=${{ matrix.package }}:latest
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

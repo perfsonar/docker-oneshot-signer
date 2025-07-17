@@ -16,7 +16,6 @@ env:
   # github.repository as <account>/<repo>
   IMAGE_BASE: ${{ github.repository }}
 
-
 jobs:
   build:
     # Iterates through each OS using a matrix strategy
@@ -58,9 +57,8 @@ jobs:
             echo "IMAGE_VARIANT=rpm" >> $GITHUB_ENV
           elif [ "${{ matrix.package }}" = "debian" ]; then
             echo "IMAGE_VARIANT=deb" >> $GITHUB_ENV
-         fi
-        
-                                                                                        fi
+          fi
+
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata

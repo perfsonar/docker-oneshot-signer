@@ -11,5 +11,4 @@ dnf -y install \
     pinentry \
     rpm \
     rpm-sign\
-    util-linux \
-    sudo 
+    util-linux 

@@ -10,4 +10,5 @@ dnf -y install \
     gpg \
     pinentry \
     rpm \
-    rpm-sign
+    rpm-sign\
+    sudo 

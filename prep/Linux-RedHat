@@ -10,5 +10,4 @@ dnf -y install \
     gpg \
     pinentry \
     rpm \
-    rpm-sign\
-    util-linux 
+    rpm-sign
